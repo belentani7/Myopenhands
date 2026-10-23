@@ -1,6 +1,7 @@
 import React, { Component, ErrorInfo, ReactNode } from 'react';
 import { RefreshCw, Wrench, ShieldCheck, Download, AlertTriangle } from 'lucide-react';
 import { ejecutarProtocoloAutoReparacion } from '../utils/selfFixProtocol';
+import { buildLocalDataBackup } from '../utils/localDataBackup';
 
 interface Props {
   children: ReactNode;
@@ -75,13 +76,45 @@ export class ErrorBoundaryWithSelfFix extends React.Component<Props, State> {
     URL.revokeObjectURL(url);
   };
 
+  private handleDownloadBackup = (): boolean => {
+    try {
+      // This download remains on the user's device. Never send its private data
+      // to a remote endpoint or include it in a diagnostic report.
+      const backup = buildLocalDataBackup(window.localStorage);
+      const blob = new Blob([backup], { type: 'application/json;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `myopenhands-respaldo-privado-${new Date().toISOString().slice(0, 10)}.json`;
+      document.body.appendChild(link);
+      try {
+        link.click();
+      } finally {
+        link.remove();
+        window.setTimeout(() => URL.revokeObjectURL(url), 30_000);
+      }
+      return true;
+    } catch (error) {
+      console.error('No se pudo preparar el respaldo local:', error);
+      window.alert('No se ha borrado ningún dato. El respaldo no se pudo preparar.');
+      return false;
+    }
+  };
+
   private handleSafeReset = () => {
-    if (window.confirm('¿Deseas reiniciar al estado inicial seguro manteniendo una copia de respaldo?')) {
-      this.handleDownloadDiagnostic();
-      localStorage.removeItem('ma_progress');
-      localStorage.removeItem('ma_cv');
-      localStorage.removeItem('ma_apts');
+    if (!window.confirm('El respaldo incluirá datos privados de CV, progreso y citas. ¿Deseas descargarlo antes de restablecer?')) return;
+    if (!this.handleDownloadBackup()) return;
+    // Triggering a download does not prove the file was saved. Require the
+    // user to check it before any irreversible local data deletion.
+    if (!window.confirm('Comprueba que el archivo de respaldo privado se ha guardado. Si no lo encuentras, pulsa Cancelar. ¿Confirmas borrar los datos locales?')) return;
+    try {
+      window.localStorage.removeItem('ma_progress');
+      window.localStorage.removeItem('ma_cv');
+      window.localStorage.removeItem('ma_apts');
       window.location.reload();
+    } catch (error) {
+      console.error('No se pudo restablecer el almacenamiento:', error);
+      window.alert('No se pudo completar el restablecimiento. Conserva el archivo de respaldo.');
     }
   };
 
@@ -97,7 +130,7 @@ export class ErrorBoundaryWithSelfFix extends React.Component<Props, State> {
                   Protocolo de Auto-Recuperación Activado
                 </h1>
                 <p className="text-xs text-slate-400">
-                  Manos Abiertas ha protegido tus datos locales de forma segura.
+                  Tus datos siguen en el navegador. Descarga una copia antes de restablecer.
                 </p>
               </div>
             </div>
@@ -139,13 +172,20 @@ export class ErrorBoundaryWithSelfFix extends React.Component<Props, State> {
               </button>
             </div>
 
-            <div className="flex items-center justify-between mt-6 pt-4 border-t border-slate-700/60 text-xs text-slate-400">
+            <div className="flex flex-wrap items-center justify-between gap-3 mt-6 pt-4 border-t border-slate-700/60 text-xs text-slate-400">
               <button
                 onClick={this.handleDownloadDiagnostic}
                 className="hover:text-amber-400 flex items-center gap-1.5 transition-colors"
               >
                 <Download className="w-3.5 h-3.5" />
                 Descargar informe de error
+              </button>
+              <button
+                onClick={() => this.handleDownloadBackup()}
+                className="hover:text-amber-400 flex items-center gap-1.5 transition-colors"
+              >
+                <Download className="w-3.5 h-3.5" />
+                Descargar respaldo privado
               </button>
               <button
                 onClick={this.handleSafeReset}

@@ -318,6 +318,27 @@ export default function App() {
   };
 
   // Full Data Import from JSON
+  const downloadPrivateBackup = (): boolean => {
+    try {
+      const data = buildLocalDataBackup(window.localStorage);
+      const url = URL.createObjectURL(new Blob([data], { type: 'application/json;charset=utf-8' }));
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `myopenhands-respaldo-privado-${new Date().toISOString().slice(0, 10)}.json`;
+      document.body.appendChild(link);
+      try {
+        link.click();
+      } finally {
+        link.remove();
+        window.setTimeout(() => URL.revokeObjectURL(url), 30_000);
+      }
+      return true;
+    } catch {
+      window.alert('No se pudo preparar el respaldo privado. No se modificó ningún dato.');
+      return false;
+    }
+  };
+
   const handleImportData = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -339,11 +360,17 @@ export default function App() {
   };
 
   const handleResetAllData = () => {
+    if (!window.confirm('El restablecimiento sustituirá CV, progreso, citas y recursos. ¿Descargar primero un respaldo privado?')) return;
+    if (!downloadPrivateBackup()) return;
+    if (!window.confirm('Comprueba que el archivo se ha guardado. Si no está disponible, cancela. ¿Restablecer los datos ahora?')) return;
+    for (const key of LOCAL_DATA_KEYS) {
+      SafeStorage.allowOverwriteAfterUserConfirmation(key);
+    }
     setProgress(INITIAL_PROGRESS);
     setCvData(INITIAL_CV);
     setAppointments(INITIAL_APPOINTMENTS);
     setSavedResources([]);
-    alert('Datos restablecidos a valores por defecto.');
+    window.alert('Datos restablecidos a valores por defecto. Conserva tu respaldo privado.');
   };
 
   const t = TRANSLATIONS[language];

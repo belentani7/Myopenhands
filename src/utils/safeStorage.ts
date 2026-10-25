@@ -27,6 +27,10 @@ export class SafeStorage {
     }
   }
 
+  static hasProtectedData(): boolean {
+    return this.protectedKeys.size > 0;
+  }
+
   static allowOverwriteAfterUserConfirmation(key: string): void {
     this.protectedKeys.delete(key);
   }

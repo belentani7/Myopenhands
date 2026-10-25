@@ -425,6 +425,11 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-[#fdf2e9] dark:bg-[#0c1015] text-slate-800 dark:text-slate-100 font-sans transition-colors flex flex-col relative overflow-x-hidden selection:bg-orange-500 selection:text-white">
+      {SafeStorage.hasProtectedData() && (
+        <div role="alert" className="relative z-50 mx-3 mt-3 rounded-xl border border-amber-500 bg-amber-50 p-4 text-sm text-amber-950 shadow-sm dark:bg-amber-950 dark:text-amber-100 sm:mx-auto sm:w-full sm:max-w-5xl">
+          Se han detectado datos locales que no se pueden leer. Los originales se han conservado sin sobrescribir. Descarga una copia privada antes de importar o restablecer.
+        </div>
+      )}
       {/* Frosted Glass Ambient Gradient Glow Orbs */}
       <div className="fixed top-[-10%] left-[-10%] w-[450px] sm:w-[550px] h-[450px] sm:h-[550px] bg-orange-400/35 dark:bg-orange-600/20 rounded-full blur-[110px] pointer-events-none z-0"></div>
       <div className="fixed bottom-[-10%] right-[-10%] w-[500px] sm:w-[650px] h-[500px] sm:h-[650px] bg-teal-400/30 dark:bg-teal-600/15 rounded-full blur-[130px] pointer-events-none z-0"></div>

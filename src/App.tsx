@@ -342,18 +342,54 @@ export default function App() {
   const handleImportData = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    if (file.size > 5_000_000) {
+      window.alert('El archivo supera el límite de importación de 5 MB.');
+      return;
+    }
     const reader = new FileReader();
+    reader.onerror = () => window.alert('No se pudo leer el archivo de importación.');
     reader.onload = (event) => {
       try {
-        const parsed = JSON.parse(event.target?.result as string);
-        if (parsed.progress) setProgress(parsed.progress);
-        if (parsed.cvData) setCvData(parsed.cvData);
-        if (parsed.appointments) setAppointments(parsed.appointments);
-        if (parsed.savedResources) setSavedResources(parsed.savedResources);
-        if (parsed.language) setLanguage(parsed.language);
-        alert('¡Copia de seguridad restaurada con éxito!');
-      } catch (err) {
-        alert('El archivo JSON no es válido o está dañado.');
+        const parsed: unknown = JSON.parse(String(event.target?.result ?? ''));
+        if (!isRecord(parsed)) throw new Error('Formato inválido');
+        const validProgress = parsed.progress === undefined ||
+          (isRecord(parsed.progress) && typeof parsed.progress.totalXP === 'number' && Array.isArray(parsed.progress.completedLessons));
+        const validCV = parsed.cvData === undefined ||
+          (isRecord(parsed.cvData) && typeof parsed.cvData.fullName === 'string' && Array.isArray(parsed.cvData.experience));
+        const validAppointments = parsed.appointments === undefined || Array.isArray(parsed.appointments);
+        const validResources = parsed.savedResources === undefined ||
+          (Array.isArray(parsed.savedResources) && parsed.savedResources.every((item) => typeof item === 'string'));
+        if (!validProgress || !validCV || !validAppointments || !validResources) {
+          throw new Error('Los datos no tienen la estructura esperada');
+        }
+        if (!('progress' in parsed || 'cvData' in parsed || 'appointments' in parsed || 'savedResources' in parsed)) {
+          throw new Error('No hay datos reconocidos para importar');
+        }
+        if (!window.confirm('La importación reemplazará datos locales. ¿Descargar antes un respaldo privado?')) return;
+        if (!downloadPrivateBackup()) return;
+        if (!window.confirm('Comprueba que el respaldo se ha guardado. ¿Confirmas la importación?')) return;
+        if (parsed.progress !== undefined) {
+          SafeStorage.allowOverwriteAfterUserConfirmation('ma_progress');
+          setProgress(parsed.progress as UserProgress);
+        }
+        if (parsed.cvData !== undefined) {
+          SafeStorage.allowOverwriteAfterUserConfirmation('ma_cv');
+          setCvData(parsed.cvData as CVData);
+        }
+        if (parsed.appointments !== undefined) {
+          SafeStorage.allowOverwriteAfterUserConfirmation('ma_apts');
+          setAppointments(parsed.appointments as AppointmentItem[]);
+        }
+        if (parsed.savedResources !== undefined) {
+          SafeStorage.allowOverwriteAfterUserConfirmation('ma_saved_res');
+          setSavedResources(parsed.savedResources as string[]);
+        }
+        if (typeof parsed.language === 'string' && parsed.language in TRANSLATIONS) {
+          setLanguage(parsed.language as Language);
+        }
+        window.alert('Datos importados. Conserva tu respaldo anterior.');
+      } catch {
+        window.alert('El archivo JSON no es válido o no contiene datos compatibles.');
       }
     };
     reader.readAsText(file);

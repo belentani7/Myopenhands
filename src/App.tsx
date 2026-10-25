@@ -35,6 +35,7 @@ import { NodePassport } from './components/NodePassport';
 import { CognitiveAccessibilityBar } from './components/CognitiveAccessibilityBar';
 import { SystemHealthModal } from './components/SystemHealthModal';
 import { SafeStorage } from './utils/selfFixProtocol';
+import { buildLocalDataBackup, LOCAL_DATA_KEYS } from './utils/localDataBackup';
 
 import {
   Sparkles,
@@ -53,6 +54,9 @@ import {
   HelpCircle,
   Layers
 } from 'lucide-react';
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === 'object' && value !== null && !Array.isArray(value);
 
 const INITIAL_PROGRESS: UserProgress = {
   completedLessons: ['l1', 'les-alfa-101'],
@@ -150,19 +154,19 @@ export default function App() {
   });
 
   const [progress, setProgress] = useState<UserProgress>(() => {
-    return SafeStorage.getJSON('ma_progress', INITIAL_PROGRESS).data;
+    return SafeStorage.getJSON('ma_progress', INITIAL_PROGRESS, (val) => isRecord(val) && typeof val.totalXP === 'number' && Array.isArray(val.completedLessons)).data;
   });
 
   const [cvData, setCvData] = useState<CVData>(() => {
-    return SafeStorage.getJSON('ma_cv', INITIAL_CV).data;
+    return SafeStorage.getJSON('ma_cv', INITIAL_CV, (val) => isRecord(val) && typeof val.fullName === 'string' && Array.isArray(val.experience)).data;
   });
 
   const [appointments, setAppointments] = useState<AppointmentItem[]>(() => {
-    return SafeStorage.getJSON('ma_apts', INITIAL_APPOINTMENTS).data;
+    return SafeStorage.getJSON('ma_apts', INITIAL_APPOINTMENTS, Array.isArray).data;
   });
 
   const [savedResources, setSavedResources] = useState<string[]>(() => {
-    return SafeStorage.getJSON('ma_saved_res', ['res-1', 'res-2']).data;
+    return SafeStorage.getJSON('ma_saved_res', ['res-1', 'res-2'], (val) => Array.isArray(val) && val.every((item) => typeof item === 'string')).data;
   });
 
   const [isPrintModalOpen, setIsPrintModalOpen] = useState(false);
@@ -212,19 +216,19 @@ export default function App() {
   }, [language]);
 
   useEffect(() => {
-    localStorage.setItem('ma_progress', JSON.stringify(progress));
+    SafeStorage.setJSON('ma_progress', progress);
   }, [progress]);
 
   useEffect(() => {
-    localStorage.setItem('ma_cv', JSON.stringify(cvData));
+    SafeStorage.setJSON('ma_cv', cvData);
   }, [cvData]);
 
   useEffect(() => {
-    localStorage.setItem('ma_apts', JSON.stringify(appointments));
+    SafeStorage.setJSON('ma_apts', appointments);
   }, [appointments]);
 
   useEffect(() => {
-    localStorage.setItem('ma_saved_res', JSON.stringify(savedResources));
+    SafeStorage.setJSON('ma_saved_res', savedResources);
   }, [savedResources]);
 
   useEffect(() => {
@@ -620,10 +624,10 @@ export default function App() {
         isOpen={isHealthModalOpen}
         onClose={() => setIsHealthModalOpen(false)}
         onDataRepaired={() => {
-          setProgress(SafeStorage.getJSON('ma_progress', INITIAL_PROGRESS).data);
-          setCvData(SafeStorage.getJSON('ma_cv', INITIAL_CV).data);
-          setAppointments(SafeStorage.getJSON('ma_apts', INITIAL_APPOINTMENTS).data);
-          setSavedResources(SafeStorage.getJSON('ma_saved_res', ['res-1', 'res-2']).data);
+          setProgress(SafeStorage.getJSON('ma_progress', INITIAL_PROGRESS, (val) => isRecord(val) && typeof val.totalXP === 'number' && Array.isArray(val.completedLessons)).data);
+          setCvData(SafeStorage.getJSON('ma_cv', INITIAL_CV, (val) => isRecord(val) && typeof val.fullName === 'string' && Array.isArray(val.experience)).data);
+          setAppointments(SafeStorage.getJSON('ma_apts', INITIAL_APPOINTMENTS, Array.isArray).data);
+          setSavedResources(SafeStorage.getJSON('ma_saved_res', ['res-1', 'res-2'], (val) => Array.isArray(val) && val.every((item) => typeof item === 'string')).data);
         }}
       />
 

@@ -26,3 +26,27 @@ export function buildLocalDataBackup(
     entries,
   }, null, 2);
 }
+
+/** Validate an exported local backup without interpreting or losing malformed values. */
+export function parseLocalDataBackup(text: string): Record<(typeof LOCAL_DATA_KEYS)[number], string | null> {
+  const parsed: unknown = JSON.parse(text);
+  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+    throw new Error('Invalid backup document');
+  }
+  const document = parsed as Record<string, unknown>;
+  if (document.format !== 'myopenhands-local-data' || document.version !== 1 ||
+      typeof document.entries !== 'object' || document.entries === null ||
+      Array.isArray(document.entries)) {
+    throw new Error('Unsupported local backup format');
+  }
+  const entries = document.entries as Record<string, unknown>;
+  const restored = {} as Record<(typeof LOCAL_DATA_KEYS)[number], string | null>;
+  for (const key of LOCAL_DATA_KEYS) {
+    if (!Object.prototype.hasOwnProperty.call(entries, key) ||
+        (entries[key] !== null && typeof entries[key] !== 'string')) {
+      throw new Error('Incomplete or invalid backup entry');
+    }
+    restored[key] = entries[key] as string | null;
+  }
+  return restored;
+}

@@ -33,6 +33,7 @@ describe('SafeStorage never destroys invalid local records on read', () => {
       assert.deepEqual(result.data, fallback);
       assert.equal(result.repaired, false);
       assert.equal(SafeStorage.setJSON('ma_cv', fallback), false);
+      assert.equal(SafeStorage.hasProtectedData(), true);
       assert.equal(values.get('ma_cv'), '{PRIVATE_BROKEN_CV');
     });
   });
@@ -55,6 +56,7 @@ describe('SafeStorage never destroys invalid local records on read', () => {
       SafeStorage.getJSON('ma_apts', []);
       assert.equal(SafeStorage.setJSON('ma_apts', []), false);
       SafeStorage.allowOverwriteAfterUserConfirmation('ma_apts');
+      assert.equal(SafeStorage.hasProtectedData(), false);
       assert.equal(SafeStorage.setJSON('ma_apts', []), true);
       assert.equal(values.get('ma_apts'), '[]');
     });

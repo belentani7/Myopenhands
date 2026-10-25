@@ -35,7 +35,7 @@ import { NodePassport } from './components/NodePassport';
 import { CognitiveAccessibilityBar } from './components/CognitiveAccessibilityBar';
 import { SystemHealthModal } from './components/SystemHealthModal';
 import { SafeStorage } from './utils/selfFixProtocol';
-import { buildLocalDataBackup, LOCAL_DATA_KEYS } from './utils/localDataBackup';
+import { buildLocalDataBackup, parseLocalDataBackup, LOCAL_DATA_KEYS } from './utils/localDataBackup';
 
 import {
   Sparkles,
@@ -350,8 +350,36 @@ export default function App() {
     reader.onerror = () => window.alert('No se pudo leer el archivo de importación.');
     reader.onload = (event) => {
       try {
-        const parsed: unknown = JSON.parse(String(event.target?.result ?? ''));
+        const sourceText = String(event.target?.result ?? '');
+        const parsed: unknown = JSON.parse(sourceText);
         if (!isRecord(parsed)) throw new Error('Formato inválido');
+        if (parsed.format === 'myopenhands-local-data') {
+          const entries = parseLocalDataBackup(sourceText);
+          if (!window.confirm('Restaurar el respaldo sustituirá los datos actuales. ¿Descargar antes una copia privada?')) return;
+          if (!downloadPrivateBackup()) return;
+          if (!window.confirm('Comprueba que la copia anterior se ha guardado. ¿Restaurar ahora el respaldo seleccionado?')) return;
+          const previous = LOCAL_DATA_KEYS.map((key) => [key, window.localStorage.getItem(key)] as const);
+          try {
+            for (const key of LOCAL_DATA_KEYS) {
+              const value = entries[key];
+              if (value === null) window.localStorage.removeItem(key);
+              else window.localStorage.setItem(key, value);
+            }
+          } catch {
+            // localStorage is not transactional; attempt to restore the prior values.
+            for (const [key, value] of previous) {
+              try {
+                if (value === null) window.localStorage.removeItem(key);
+                else window.localStorage.setItem(key, value);
+              } catch {
+                // The downloaded backup remains the recovery source if rollback fails.
+              }
+            }
+            throw new Error('No se pudo restaurar el almacenamiento');
+          }
+          window.location.reload();
+          return;
+        }
         const validProgress = parsed.progress === undefined ||
           (isRecord(parsed.progress) && typeof parsed.progress.totalXP === 'number' && Array.isArray(parsed.progress.completedLessons));
         const validCV = parsed.cvData === undefined ||

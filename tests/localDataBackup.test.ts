@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { buildLocalDataBackup, LOCAL_DATA_KEYS } from '../src/utils/localDataBackup.ts';
+import { buildLocalDataBackup, parseLocalDataBackup, LOCAL_DATA_KEYS } from '../src/utils/localDataBackup.ts';
 
 describe('local private data backup', () => {
   it('preserves exact CV, appointments and progress without sending or modifying them', () => {
@@ -33,4 +33,24 @@ describe('local private data backup', () => {
   it('fails closed for non-string values from an invalid storage adapter', () => {
     assert.throws(() => buildLocalDataBackup({ getItem: () => 42 as unknown as string }), /Invalid storage value/);
   });
+  it('restores exact raw values including malformed CV JSON', () => {
+    const backup = buildLocalDataBackup({ getItem: key => key === 'ma_cv' ? '{broken CV' : null }, '2026-10-25T00:00:00Z');
+    const entries = parseLocalDataBackup(backup);
+    assert.equal(entries.ma_cv, '{broken CV');
+    assert.equal(entries.ma_apts, null);
+    assert.deepEqual(Object.keys(entries), [...LOCAL_DATA_KEYS]);
+  });
+
+  it('rejects missing, invalid and unsupported backup records', () => {
+    const valid = JSON.parse(buildLocalDataBackup({ getItem: () => null }));
+    delete valid.entries.ma_cv;
+    assert.throws(() => parseLocalDataBackup(JSON.stringify(valid)), /Incomplete/);
+    valid.entries.ma_cv = 42;
+    assert.throws(() => parseLocalDataBackup(JSON.stringify(valid)), /Incomplete/);
+    valid.entries.ma_cv = null;
+    valid.version = 99;
+    assert.throws(() => parseLocalDataBackup(JSON.stringify(valid)), /Unsupported/);
+    assert.throws(() => parseLocalDataBackup('[]'), /Invalid backup/);
+  });
+
 });

@@ -416,8 +416,12 @@ export default function App() {
           setLanguage(parsed.language as Language);
         }
         window.alert('Datos importados. Conserva tu respaldo anterior.');
-      } catch {
-        window.alert('El archivo JSON no es válido o no contiene datos compatibles.');
+      } catch (error) {
+        if (error instanceof Error && error.message === 'No se pudo restaurar el almacenamiento') {
+          window.alert('No se pudo completar la restauración. Conserva los dos archivos de respaldo y revisa el espacio del navegador.');
+        } else {
+          window.alert('El archivo JSON no es válido o no contiene datos compatibles.');
+        }
       }
     };
     reader.readAsText(file);

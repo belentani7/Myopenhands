@@ -15,7 +15,7 @@ export class SafeStorage {
         // Render a safe in-memory view without overwriting the original value.
         this.protectedKeys.add(key);
         console.warn(`[SafeStorage] Registro inválido en '${key}'; se conserva para recuperación.`);
-        return { data: this.deepRepair(parsed, fallback), repaired: false };
+        return { data: fallback, repaired: false };
       }
       this.protectedKeys.delete(key);
       return { data: parsed as T, repaired: false };

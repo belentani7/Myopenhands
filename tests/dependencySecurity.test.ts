@@ -27,6 +27,13 @@ describe('Vite security baseline and reproducible dependency lock', () => {
     assert.match(parser.integrity, /^sha512-[A-Za-z0-9+/]+={0,2}$/);
   });
 
+  it('locks qs 6.16.1 to avoid unsafe comma-format coercion', () => {
+    const qs = lock.packages['node_modules/qs'];
+    assert.equal(qs.version, '6.16.1');
+    assert.equal(qs.resolved, 'https://registry.npmjs.org/qs/-/qs-6.16.1.tgz');
+    assert.match(qs.integrity, /^sha512-[A-Za-z0-9+/]+={0,2}$/);
+  });
+
   it('does not retain a nested vulnerable Vite 6.x installation', () => {
     for (const [path, entry] of Object.entries(lock.packages as Record<string, { version: string }>)) {
       if (path === 'node_modules/vite' || path.endsWith('/node_modules/vite')) {

@@ -1,7 +1,7 @@
 import React, { Component, ErrorInfo, ReactNode } from 'react';
 import { RefreshCw, Wrench, ShieldCheck, Download, AlertTriangle } from 'lucide-react';
 import { ejecutarProtocoloAutoReparacion } from '../utils/selfFixProtocol';
-import { buildLocalDataBackup } from '../utils/localDataBackup';
+import { buildLocalDataBackup, applyLocalDataEntries } from '../utils/localDataBackup';
 
 interface Props {
   children: ReactNode;
@@ -108,9 +108,12 @@ export class ErrorBoundaryWithSelfFix extends React.Component<Props, State> {
     // user to check it before any irreversible local data deletion.
     if (!window.confirm('Comprueba que el archivo de respaldo privado se ha guardado. Si no lo encuentras, pulsa Cancelar. ¿Confirmas borrar los datos locales?')) return;
     try {
-      window.localStorage.removeItem('ma_progress');
-      window.localStorage.removeItem('ma_cv');
-      window.localStorage.removeItem('ma_apts');
+      applyLocalDataEntries(window.localStorage, {
+        ma_progress: null,
+        ma_cv: null,
+        ma_apts: null,
+        ma_saved_res: null,
+      });
       window.location.reload();
     } catch (error) {
       console.error('No se pudo restablecer el almacenamiento:', error);

@@ -35,7 +35,7 @@ import { NodePassport } from './components/NodePassport';
 import { CognitiveAccessibilityBar } from './components/CognitiveAccessibilityBar';
 import { SystemHealthModal } from './components/SystemHealthModal';
 import { SafeStorage } from './utils/selfFixProtocol';
-import { buildLocalDataBackup, parseLocalDataBackup, LOCAL_DATA_KEYS } from './utils/localDataBackup';
+import { buildLocalDataBackup, parseLocalDataBackup, applyLocalDataEntries, type LocalDataKey } from './utils/localDataBackup';
 
 import {
   Sparkles,
@@ -358,25 +358,7 @@ export default function App() {
           if (!window.confirm('Restaurar el respaldo sustituirá los datos actuales. ¿Descargar antes una copia privada?')) return;
           if (!downloadPrivateBackup()) return;
           if (!window.confirm('Comprueba que la copia anterior se ha guardado. ¿Restaurar ahora el respaldo seleccionado?')) return;
-          const previous = LOCAL_DATA_KEYS.map((key) => [key, window.localStorage.getItem(key)] as const);
-          try {
-            for (const key of LOCAL_DATA_KEYS) {
-              const value = entries[key];
-              if (value === null) window.localStorage.removeItem(key);
-              else window.localStorage.setItem(key, value);
-            }
-          } catch {
-            // localStorage is not transactional; attempt to restore the prior values.
-            for (const [key, value] of previous) {
-              try {
-                if (value === null) window.localStorage.removeItem(key);
-                else window.localStorage.setItem(key, value);
-              } catch {
-                // The downloaded backup remains the recovery source if rollback fails.
-              }
-            }
-            throw new Error('No se pudo restaurar el almacenamiento');
-          }
+          applyLocalDataEntries(window.localStorage, entries);
           window.location.reload();
           return;
         }
@@ -396,28 +378,21 @@ export default function App() {
         if (!window.confirm('La importación reemplazará datos locales. ¿Descargar antes un respaldo privado?')) return;
         if (!downloadPrivateBackup()) return;
         if (!window.confirm('Comprueba que el respaldo se ha guardado. ¿Confirmas la importación?')) return;
-        if (parsed.progress !== undefined) {
-          SafeStorage.allowOverwriteAfterUserConfirmation('ma_progress');
-          setProgress(parsed.progress as UserProgress);
-        }
-        if (parsed.cvData !== undefined) {
-          SafeStorage.allowOverwriteAfterUserConfirmation('ma_cv');
-          setCvData(parsed.cvData as CVData);
-        }
-        if (parsed.appointments !== undefined) {
-          SafeStorage.allowOverwriteAfterUserConfirmation('ma_apts');
-          setAppointments(parsed.appointments as AppointmentItem[]);
-        }
-        if (parsed.savedResources !== undefined) {
-          SafeStorage.allowOverwriteAfterUserConfirmation('ma_saved_res');
-          setSavedResources(parsed.savedResources as string[]);
-        }
+        // Persist first and reload only after every write succeeds. React state
+        // alone cannot prove that private data reached localStorage.
+        const updates: Partial<Record<LocalDataKey | 'ma_lang', string | null>> = {};
+        if (parsed.progress !== undefined) updates.ma_progress = JSON.stringify(parsed.progress);
+        if (parsed.cvData !== undefined) updates.ma_cv = JSON.stringify(parsed.cvData);
+        if (parsed.appointments !== undefined) updates.ma_apts = JSON.stringify(parsed.appointments);
+        if (parsed.savedResources !== undefined) updates.ma_saved_res = JSON.stringify(parsed.savedResources);
         if (typeof parsed.language === 'string' && parsed.language in TRANSLATIONS) {
-          setLanguage(parsed.language as Language);
+          updates.ma_lang = parsed.language;
         }
-        window.alert('Datos importados. Conserva tu respaldo anterior.');
+        applyLocalDataEntries(window.localStorage, updates);
+        window.location.reload();
+
       } catch (error) {
-        if (error instanceof Error && error.message === 'No se pudo restaurar el almacenamiento') {
+        if (error instanceof Error && error.message.startsWith('No se pudo restaurar el almacenamiento')) {
           window.alert('No se pudo completar la restauración. Conserva los dos archivos de respaldo y revisa el espacio del navegador.');
         } else {
           window.alert('El archivo JSON no es válido o no contiene datos compatibles.');
@@ -431,14 +406,17 @@ export default function App() {
     if (!window.confirm('El restablecimiento sustituirá CV, progreso, citas y recursos. ¿Descargar primero un respaldo privado?')) return;
     if (!downloadPrivateBackup()) return;
     if (!window.confirm('Comprueba que el archivo se ha guardado. Si no está disponible, cancela. ¿Restablecer los datos ahora?')) return;
-    for (const key of LOCAL_DATA_KEYS) {
-      SafeStorage.allowOverwriteAfterUserConfirmation(key);
+    try {
+      applyLocalDataEntries(window.localStorage, {
+        ma_progress: JSON.stringify(INITIAL_PROGRESS),
+        ma_cv: JSON.stringify(INITIAL_CV),
+        ma_apts: JSON.stringify(INITIAL_APPOINTMENTS),
+        ma_saved_res: '[]',
+      });
+      window.location.reload();
+    } catch {
+      window.alert('No se pudo restablecer el almacenamiento. Conserva el respaldo privado y comprueba los datos actuales.');
     }
-    setProgress(INITIAL_PROGRESS);
-    setCvData(INITIAL_CV);
-    setAppointments(INITIAL_APPOINTMENTS);
-    setSavedResources([]);
-    window.alert('Datos restablecidos a valores por defecto. Conserva tu respaldo privado.');
   };
 
   const t = TRANSLATIONS[language];

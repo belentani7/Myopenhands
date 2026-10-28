@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { buildLocalDataBackup, parseLocalDataBackup, LOCAL_DATA_KEYS } from '../src/utils/localDataBackup.ts';
+import { buildLocalDataBackup, parseLocalDataBackup, LOCAL_DATA_KEYS, applyLocalDataEntries } from '../src/utils/localDataBackup.ts';
 
 describe('local private data backup', () => {
   it('preserves exact CV, appointments and progress without sending or modifying them', () => {
@@ -53,4 +53,56 @@ describe('local private data backup', () => {
     assert.throws(() => parseLocalDataBackup('[]'), /Invalid backup/);
   });
 
+});
+
+function memoryStorage(initial: Record<string, string>, fail?: (operation: string, key: string) => void) {
+  const values = new Map(Object.entries(initial));
+  const storage = {
+    getItem(key: string) { fail?.('get', key); return values.get(key) ?? null; },
+    setItem(key: string, value: string) { fail?.('set', key); values.set(key, value); },
+    removeItem(key: string) { fail?.('remove', key); values.delete(key); },
+  };
+  return { values, storage };
+}
+
+describe('confirmed local import and reset are not silently partial', () => {
+  it('restores every raw backup entry including malformed records and null removals', () => {
+    const { values, storage } = memoryStorage({ ma_cv: 'old', ma_apts: 'old', ma_progress: 'old' });
+    applyLocalDataEntries(storage, { ma_progress: '{new', ma_cv: '{malformed', ma_apts: null, ma_saved_res: '["r"]' });
+    assert.deepEqual(Object.fromEntries(values), { ma_cv: '{malformed', ma_progress: '{new', ma_saved_res: '["r"]' });
+  });
+  it('rolls back earlier writes when a later write exceeds quota', () => {
+    const { values, storage } = memoryStorage({ ma_progress: 'original', ma_cv: 'private' }, (op, key) => {
+      if (op === 'set' && key === 'ma_cv') throw new Error('QuotaExceededError');
+    });
+    assert.throws(() => applyLocalDataEntries(storage, { ma_progress: 'new', ma_cv: 'replacement' }), /No se pudo restaurar/);
+    assert.equal(values.get('ma_progress'), 'original');
+    assert.equal(values.get('ma_cv'), 'private');
+  });
+  it('does not write anything when any protected key cannot be read', () => {
+    let writes = 0;
+    const { values, storage } = memoryStorage({ ma_progress: 'private' }, (op, key) => {
+      if (op === 'get' && key === 'ma_cv') throw new Error('SecurityError');
+      if (op !== 'get') writes++;
+    });
+    assert.throws(() => applyLocalDataEntries(storage, { ma_progress: 'new', ma_cv: 'new' }), /lectura bloqueada/);
+    assert.equal(writes, 0);
+    assert.equal(values.get('ma_progress'), 'private');
+  });
+  it('rejects unrecognized keys and invalid values before touching storage', () => {
+    let calls = 0;
+    const { storage } = memoryStorage({}, () => { calls++; });
+    assert.throws(() => applyLocalDataEntries(storage, { ma_cv: 17 as unknown as string }), /inválida/);
+    assert.throws(() => applyLocalDataEntries(storage, { unknown: 'bad' } as never), /inválida/);
+    assert.equal(calls, 0);
+  });
+  it('reports incomplete rollback when browser storage stays unavailable', () => {
+    const { values, storage } = memoryStorage({ ma_progress: 'original', ma_cv: 'private' }, (op, key) => {
+      if (op === 'set' && key === 'ma_cv') throw new Error('QuotaExceededError');
+      if (op === 'set' && key === 'ma_progress' && values.get(key) === 'new') throw new Error('StorageBlocked');
+    });
+    assert.throws(() => applyLocalDataEntries(storage, { ma_progress: 'new', ma_cv: 'replacement' }), /reversión incompleta/);
+    assert.equal(values.get('ma_progress'), 'new');
+    assert.equal(values.get('ma_cv'), 'private');
+  });
 });

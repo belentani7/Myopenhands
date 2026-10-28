@@ -2,6 +2,10 @@ import { Language, UserProgress, CVData, AppointmentItem, NodeId } from '../type
 import { TRANSLATIONS } from '../data/i18n';
 import { VOCES_39, repararMotorVoz } from '../data/voiceConfig';
 import { NODES_LIST } from '../data/nodesMetadata';
+import { buildLocalDataBackup } from './localDataBackup';
+import { SafeStorage } from './safeStorage';
+import { isUserProgressRecord, isCVRecord } from './storageValidators';
+export { SafeStorage } from './safeStorage';
 
 export interface AuditReportItem {
   id: string;
@@ -123,61 +127,6 @@ export const INITIAL_APPOINTMENTS_DEFAULTS: AppointmentItem[] = [
 
 // ─── SAFE STORAGE WRAPPER WITH AUTO-HEALING ─────────────────────────────────
 
-export class SafeStorage {
-  static getJSON<T>(key: string, fallback: T, validator?: (val: any) => boolean): { data: T; repaired: boolean } {
-    if (typeof window === 'undefined') return { data: fallback, repaired: false };
-    try {
-      const raw = localStorage.getItem(key);
-      if (!raw) return { data: fallback, repaired: false };
-      
-      const parsed = JSON.parse(raw);
-      if (validator && !validator(parsed)) {
-        console.warn(`[SafeStorage] Valor corrupto o incompleto detectado en '${key}'. Aplicando auto-reparación.`);
-        const repairedData = this.deepRepair(parsed, fallback);
-        this.setJSON(key, repairedData);
-        return { data: repairedData, repaired: true };
-      }
-      return { data: parsed as T, repaired: false };
-    } catch (err) {
-      console.error(`[SafeStorage] Error crítico al leer '${key}'. Restaurando estado seguro por defecto.`, err);
-      this.setJSON(key, fallback);
-      return { data: fallback, repaired: true };
-    }
-  }
-
-  static setJSON(key: string, value: any): boolean {
-    if (typeof window === 'undefined') return false;
-    try {
-      localStorage.setItem(key, JSON.stringify(value));
-      return true;
-    } catch (err) {
-      console.error(`[SafeStorage] Fallo de cuota o escritura en '${key}':`, err);
-      return false;
-    }
-  }
-
-  // Deep merges corrupt or partial object with fallback schema
-  static deepRepair<T>(partial: any, fallback: T): T {
-    if (partial === null || typeof partial !== 'object') {
-      return fallback;
-    }
-    if (Array.isArray(fallback)) {
-      return Array.isArray(partial) ? (partial as unknown as T) : fallback;
-    }
-    const result: any = { ...fallback };
-    for (const key of Object.keys(fallback as any)) {
-      if (partial[key] !== undefined && partial[key] !== null) {
-        if (typeof (fallback as any)[key] === 'object' && !Array.isArray((fallback as any)[key])) {
-          result[key] = this.deepRepair(partial[key], (fallback as any)[key]);
-        } else {
-          result[key] = partial[key];
-        }
-      }
-    }
-    return result as T;
-  }
-}
-
 // ─── AUDITOR & SELF-FIX PROTOCOL ENGINE ──────────────────────────────────────
 
 export function ejecutarAuditoriaCompleta(): SystemAuditReport {
@@ -197,13 +146,13 @@ export function ejecutarAuditoriaCompleta(): SystemAuditReport {
       });
     } else {
       const parsed = JSON.parse(rawProgress);
-      const ok = typeof parsed.xp === 'number' && Array.isArray(parsed.completedLessons);
+      const ok = typeof parsed.totalXP === 'number' && Array.isArray(parsed.completedLessons);
       items.push({
         id: 'st-prog-2',
         modulo: 'Almacenamiento',
         nombre: 'Estructura de Progreso (UserProgress)',
         estado: ok ? 'ok' : 'advertencia',
-        mensaje: ok ? `Progreso íntegro: ${parsed.xp} XP acumulados.` : 'Campos incompletos en el progreso local.',
+        mensaje: ok ? `Progreso íntegro: ${parsed.totalXP} XP acumulados.` : 'Campos incompletos en el progreso local.',
         autoReparable: true,
       });
     }
@@ -223,13 +172,13 @@ export function ejecutarAuditoriaCompleta(): SystemAuditReport {
     const rawCV = localStorage.getItem('ma_cv');
     if (rawCV) {
       const parsed = JSON.parse(rawCV);
-      const ok = parsed.fullName && Array.isArray(parsed.experiences) && Array.isArray(parsed.skills);
+      const ok = parsed.fullName && Array.isArray(parsed.experience) && Array.isArray(parsed.skills);
       items.push({
         id: 'st-cv-1',
         modulo: 'Almacenamiento',
         nombre: 'Base de Datos de Currículum ATS',
         estado: ok ? 'ok' : 'advertencia',
-        mensaje: ok ? `CV de '${parsed.fullName}' con ${parsed.experiences.length} experiencias.` : 'Estructura de CV incompleta.',
+        mensaje: ok ? `CV local con ${parsed.experience.length} experiencias.` : 'Estructura de CV incompleta.',
         autoReparable: true,
       });
     } else {
@@ -414,7 +363,7 @@ export function ejecutarProtocoloAutoReparacion(): SelfFixResult {
   const { data: prog, repaired: progRepaired } = SafeStorage.getJSON(
     'ma_progress',
     INITIAL_PROGRESS_DEFAULTS,
-    (val) => typeof val?.xp === 'number' && Array.isArray(val?.completedLessons)
+    isUserProgressRecord
   );
   if (progRepaired) {
     reparaciones.push('Progreso del usuario restaurado y normalizado con valores de respaldo seguros.');
@@ -424,7 +373,7 @@ export function ejecutarProtocoloAutoReparacion(): SelfFixResult {
   const { data: cv, repaired: cvRepaired } = SafeStorage.getJSON(
     'ma_cv',
     INITIAL_CV_DEFAULTS,
-    (val) => val?.fullName && Array.isArray(val?.experiences) && Array.isArray(val?.skills)
+    isCVRecord
   );
   if (cvRepaired) {
     reparaciones.push('Currículum ATS reconstruido con estructura válida y campos requeridos.');
@@ -463,14 +412,9 @@ export function ejecutarProtocoloAutoReparacion(): SelfFixResult {
   // 6. Generar snapshot de rescate en sessionStorage para prevenir pérdida
   try {
     if (typeof sessionStorage !== 'undefined') {
-      const rescueSnapshot = {
-        timestamp: new Date().toISOString(),
-        progress: prog,
-        cv,
-        appointments: apts,
-      };
-      sessionStorage.setItem('ma_rescue_snapshot', JSON.stringify(rescueSnapshot));
-      reparaciones.push('Copia de seguridad instantánea de rescate guardada en memoria de sesión.');
+      // Snapshot the exact stored strings, not fallback objects from failed parsing.
+      sessionStorage.setItem('ma_rescue_snapshot', buildLocalDataBackup(localStorage));
+      reparaciones.push('Copia temporal de los valores originales guardada en esta sesión.');
     }
   } catch (err) {
     console.warn('No se pudo guardar snapshot de sesión:', err);

@@ -35,6 +35,7 @@ import { NodePassport } from './components/NodePassport';
 import { CognitiveAccessibilityBar } from './components/CognitiveAccessibilityBar';
 import { SystemHealthModal } from './components/SystemHealthModal';
 import { SafeStorage } from './utils/selfFixProtocol';
+import { buildLocalDataBackup, parseLocalDataBackup, applyLocalDataEntries, type LocalDataKey } from './utils/localDataBackup';
 
 import {
   Sparkles,
@@ -53,6 +54,9 @@ import {
   HelpCircle,
   Layers
 } from 'lucide-react';
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === 'object' && value !== null && !Array.isArray(value);
 
 const INITIAL_PROGRESS: UserProgress = {
   completedLessons: ['l1', 'les-alfa-101'],
@@ -150,19 +154,19 @@ export default function App() {
   });
 
   const [progress, setProgress] = useState<UserProgress>(() => {
-    return SafeStorage.getJSON('ma_progress', INITIAL_PROGRESS).data;
+    return SafeStorage.getJSON('ma_progress', INITIAL_PROGRESS, (val) => isRecord(val) && typeof val.totalXP === 'number' && Array.isArray(val.completedLessons)).data;
   });
 
   const [cvData, setCvData] = useState<CVData>(() => {
-    return SafeStorage.getJSON('ma_cv', INITIAL_CV).data;
+    return SafeStorage.getJSON('ma_cv', INITIAL_CV, (val) => isRecord(val) && typeof val.fullName === 'string' && Array.isArray(val.experience)).data;
   });
 
   const [appointments, setAppointments] = useState<AppointmentItem[]>(() => {
-    return SafeStorage.getJSON('ma_apts', INITIAL_APPOINTMENTS).data;
+    return SafeStorage.getJSON('ma_apts', INITIAL_APPOINTMENTS, Array.isArray).data;
   });
 
   const [savedResources, setSavedResources] = useState<string[]>(() => {
-    return SafeStorage.getJSON('ma_saved_res', ['res-1', 'res-2']).data;
+    return SafeStorage.getJSON('ma_saved_res', ['res-1', 'res-2'], (val) => Array.isArray(val) && val.every((item) => typeof item === 'string')).data;
   });
 
   const [isPrintModalOpen, setIsPrintModalOpen] = useState(false);
@@ -212,19 +216,19 @@ export default function App() {
   }, [language]);
 
   useEffect(() => {
-    localStorage.setItem('ma_progress', JSON.stringify(progress));
+    SafeStorage.setJSON('ma_progress', progress);
   }, [progress]);
 
   useEffect(() => {
-    localStorage.setItem('ma_cv', JSON.stringify(cvData));
+    SafeStorage.setJSON('ma_cv', cvData);
   }, [cvData]);
 
   useEffect(() => {
-    localStorage.setItem('ma_apts', JSON.stringify(appointments));
+    SafeStorage.setJSON('ma_apts', appointments);
   }, [appointments]);
 
   useEffect(() => {
-    localStorage.setItem('ma_saved_res', JSON.stringify(savedResources));
+    SafeStorage.setJSON('ma_saved_res', savedResources);
   }, [savedResources]);
 
   useEffect(() => {
@@ -314,32 +318,105 @@ export default function App() {
   };
 
   // Full Data Import from JSON
+  const downloadPrivateBackup = (): boolean => {
+    try {
+      const data = buildLocalDataBackup(window.localStorage);
+      const url = URL.createObjectURL(new Blob([data], { type: 'application/json;charset=utf-8' }));
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `myopenhands-respaldo-privado-${new Date().toISOString().slice(0, 10)}.json`;
+      document.body.appendChild(link);
+      try {
+        link.click();
+      } finally {
+        link.remove();
+        window.setTimeout(() => URL.revokeObjectURL(url), 30_000);
+      }
+      return true;
+    } catch {
+      window.alert('No se pudo preparar el respaldo privado. No se modificó ningún dato.');
+      return false;
+    }
+  };
+
   const handleImportData = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    if (file.size > 5_000_000) {
+      window.alert('El archivo supera el límite de importación de 5 MB.');
+      return;
+    }
     const reader = new FileReader();
+    reader.onerror = () => window.alert('No se pudo leer el archivo de importación.');
     reader.onload = (event) => {
       try {
-        const parsed = JSON.parse(event.target?.result as string);
-        if (parsed.progress) setProgress(parsed.progress);
-        if (parsed.cvData) setCvData(parsed.cvData);
-        if (parsed.appointments) setAppointments(parsed.appointments);
-        if (parsed.savedResources) setSavedResources(parsed.savedResources);
-        if (parsed.language) setLanguage(parsed.language);
-        alert('¡Copia de seguridad restaurada con éxito!');
-      } catch (err) {
-        alert('El archivo JSON no es válido o está dañado.');
+        const sourceText = String(event.target?.result ?? '');
+        const parsed: unknown = JSON.parse(sourceText);
+        if (!isRecord(parsed)) throw new Error('Formato inválido');
+        if (parsed.format === 'myopenhands-local-data') {
+          const entries = parseLocalDataBackup(sourceText);
+          if (!window.confirm('Restaurar el respaldo sustituirá los datos actuales. ¿Descargar antes una copia privada?')) return;
+          if (!downloadPrivateBackup()) return;
+          if (!window.confirm('Comprueba que la copia anterior se ha guardado. ¿Restaurar ahora el respaldo seleccionado?')) return;
+          applyLocalDataEntries(window.localStorage, entries);
+          window.location.reload();
+          return;
+        }
+        const validProgress = parsed.progress === undefined ||
+          (isRecord(parsed.progress) && typeof parsed.progress.totalXP === 'number' && Array.isArray(parsed.progress.completedLessons));
+        const validCV = parsed.cvData === undefined ||
+          (isRecord(parsed.cvData) && typeof parsed.cvData.fullName === 'string' && Array.isArray(parsed.cvData.experience));
+        const validAppointments = parsed.appointments === undefined || Array.isArray(parsed.appointments);
+        const validResources = parsed.savedResources === undefined ||
+          (Array.isArray(parsed.savedResources) && parsed.savedResources.every((item) => typeof item === 'string'));
+        if (!validProgress || !validCV || !validAppointments || !validResources) {
+          throw new Error('Los datos no tienen la estructura esperada');
+        }
+        if (!('progress' in parsed || 'cvData' in parsed || 'appointments' in parsed || 'savedResources' in parsed)) {
+          throw new Error('No hay datos reconocidos para importar');
+        }
+        if (!window.confirm('La importación reemplazará datos locales. ¿Descargar antes un respaldo privado?')) return;
+        if (!downloadPrivateBackup()) return;
+        if (!window.confirm('Comprueba que el respaldo se ha guardado. ¿Confirmas la importación?')) return;
+        // Persist first and reload only after every write succeeds. React state
+        // alone cannot prove that private data reached localStorage.
+        const updates: Partial<Record<LocalDataKey | 'ma_lang', string | null>> = {};
+        if (parsed.progress !== undefined) updates.ma_progress = JSON.stringify(parsed.progress);
+        if (parsed.cvData !== undefined) updates.ma_cv = JSON.stringify(parsed.cvData);
+        if (parsed.appointments !== undefined) updates.ma_apts = JSON.stringify(parsed.appointments);
+        if (parsed.savedResources !== undefined) updates.ma_saved_res = JSON.stringify(parsed.savedResources);
+        if (typeof parsed.language === 'string' && parsed.language in TRANSLATIONS) {
+          updates.ma_lang = parsed.language;
+        }
+        applyLocalDataEntries(window.localStorage, updates);
+        window.location.reload();
+
+      } catch (error) {
+        if (error instanceof Error && error.message.startsWith('No se pudo restaurar el almacenamiento')) {
+          window.alert('No se pudo completar la restauración. Conserva los dos archivos de respaldo y revisa el espacio del navegador.');
+        } else {
+          window.alert('El archivo JSON no es válido o no contiene datos compatibles.');
+        }
       }
     };
     reader.readAsText(file);
   };
 
   const handleResetAllData = () => {
-    setProgress(INITIAL_PROGRESS);
-    setCvData(INITIAL_CV);
-    setAppointments(INITIAL_APPOINTMENTS);
-    setSavedResources([]);
-    alert('Datos restablecidos a valores por defecto.');
+    if (!window.confirm('El restablecimiento sustituirá CV, progreso, citas y recursos. ¿Descargar primero un respaldo privado?')) return;
+    if (!downloadPrivateBackup()) return;
+    if (!window.confirm('Comprueba que el archivo se ha guardado. Si no está disponible, cancela. ¿Restablecer los datos ahora?')) return;
+    try {
+      applyLocalDataEntries(window.localStorage, {
+        ma_progress: JSON.stringify(INITIAL_PROGRESS),
+        ma_cv: JSON.stringify(INITIAL_CV),
+        ma_apts: JSON.stringify(INITIAL_APPOINTMENTS),
+        ma_saved_res: '[]',
+      });
+      window.location.reload();
+    } catch {
+      window.alert('No se pudo restablecer el almacenamiento. Conserva el respaldo privado y comprueba los datos actuales.');
+    }
   };
 
   const t = TRANSLATIONS[language];
@@ -358,6 +435,11 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-[#fdf2e9] dark:bg-[#0c1015] text-slate-800 dark:text-slate-100 font-sans transition-colors flex flex-col relative overflow-x-hidden selection:bg-orange-500 selection:text-white">
+      {SafeStorage.hasProtectedData() && (
+        <div role="alert" className="relative z-50 mx-3 mt-3 rounded-xl border border-amber-500 bg-amber-50 p-4 text-sm text-amber-950 shadow-sm dark:bg-amber-950 dark:text-amber-100 sm:mx-auto sm:w-full sm:max-w-5xl">
+          Se han detectado datos locales que no se pueden leer. Los originales se han conservado sin sobrescribir. Descarga una copia privada antes de importar o restablecer.
+        </div>
+      )}
       {/* Frosted Glass Ambient Gradient Glow Orbs */}
       <div className="fixed top-[-10%] left-[-10%] w-[450px] sm:w-[550px] h-[450px] sm:h-[550px] bg-orange-400/35 dark:bg-orange-600/20 rounded-full blur-[110px] pointer-events-none z-0"></div>
       <div className="fixed bottom-[-10%] right-[-10%] w-[500px] sm:w-[650px] h-[500px] sm:h-[650px] bg-teal-400/30 dark:bg-teal-600/15 rounded-full blur-[130px] pointer-events-none z-0"></div>
@@ -620,10 +702,10 @@ export default function App() {
         isOpen={isHealthModalOpen}
         onClose={() => setIsHealthModalOpen(false)}
         onDataRepaired={() => {
-          setProgress(SafeStorage.getJSON('ma_progress', INITIAL_PROGRESS).data);
-          setCvData(SafeStorage.getJSON('ma_cv', INITIAL_CV).data);
-          setAppointments(SafeStorage.getJSON('ma_apts', INITIAL_APPOINTMENTS).data);
-          setSavedResources(SafeStorage.getJSON('ma_saved_res', ['res-1', 'res-2']).data);
+          setProgress(SafeStorage.getJSON('ma_progress', INITIAL_PROGRESS, (val) => isRecord(val) && typeof val.totalXP === 'number' && Array.isArray(val.completedLessons)).data);
+          setCvData(SafeStorage.getJSON('ma_cv', INITIAL_CV, (val) => isRecord(val) && typeof val.fullName === 'string' && Array.isArray(val.experience)).data);
+          setAppointments(SafeStorage.getJSON('ma_apts', INITIAL_APPOINTMENTS, Array.isArray).data);
+          setSavedResources(SafeStorage.getJSON('ma_saved_res', ['res-1', 'res-2'], (val) => Array.isArray(val) && val.every((item) => typeof item === 'string')).data);
         }}
       />
 

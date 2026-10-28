@@ -8,7 +8,8 @@
     "build": "vite build && esbuild server.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=dist/server.cjs",
     "start": "node dist/server.cjs",
     "clean": "rm -rf dist server.js",
-    "lint": "tsc --noEmit"
+    "lint": "tsc --noEmit",
+    "test": "node --experimental-strip-types --test tests/*.test.ts"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",
@@ -17,7 +18,7 @@
     "lucide-react": "^1.55.0",
     "react": "^19.0.1",
     "react-dom": "^19.0.1",
-    "vite": "^6.2.3",
+    "vite": "^6.4.5",
     "express": "^4.21.2",
     "dotenv": "^17.2.3",
     "motion": "^12.23.24"
@@ -32,6 +33,6 @@
     "tailwindcss": "^4.1.14",
     "tsx": "^4.21.0",
     "typescript": "~5.8.2",
-    "vite": "^6.2.3"
+    "vite": "^6.4.5"
   }
 }

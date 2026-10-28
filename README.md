@@ -48,3 +48,26 @@ secreto se versiona.
 ## Licencia
 
 MIT — ver `LICENSE`.
+
+## Respaldo y restauración de datos locales
+
+La interfaz permite descargar un JSON privado versionado de progreso, CV,
+citas y recursos. Conserva los valores originales, incluso cuando alguno
+contiene JSON corrupto. El archivo incluye datos personales: no compartirlo
+ni subirlo a repositorios públicos.
+
+La importación del formato `myopenhands-local-data` está implementada en
+`src/App.tsx`. También se admite el formato de exportación anterior.
+Antes de importar o restablecer se solicita descargar y comprobar un respaldo
+privado. La descarga iniciada **no garantiza que el navegador haya guardado
+el archivo**. Las escrituras comprueban el acceso previo y procuran revertir
+cambios parciales si el almacenamiento falla; si la reversión falla, el archivo
+privado descargado es la fuente de recuperación. No hay garantía de
+transacción atómica de `localStorage` ni restauración automática desde un
+almacenamiento remoto.
+
+## Alcance de las verificaciones
+
+`npm test` ejecuta regresiones Node de respaldo, almacenamiento y CI.
+No sustituye pruebas de interfaz, navegador, accesibilidad, idiomas,
+funcionamiento desconectado, instalación reproducible o despliegue real.

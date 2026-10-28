@@ -20,6 +20,13 @@ describe('Vite security baseline and reproducible dependency lock', () => {
     assert.match(vite.integrity, /^sha512-[A-Za-z0-9+/]+={0,2}$/);
   });
 
+  it('locks patched body-parser for Express 4 compressed request handling', () => {
+    const parser = lock.packages['node_modules/body-parser'];
+    assert.equal(parser.version, '1.20.9');
+    assert.equal(parser.resolved, 'https://registry.npmjs.org/body-parser/-/body-parser-1.20.9.tgz');
+    assert.match(parser.integrity, /^sha512-[A-Za-z0-9+/]+={0,2}$/);
+  });
+
   it('does not retain a nested vulnerable Vite 6.x installation', () => {
     for (const [path, entry] of Object.entries(lock.packages as Record<string, { version: string }>)) {
       if (path === 'node_modules/vite' || path.endsWith('/node_modules/vite')) {

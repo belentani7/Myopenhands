@@ -21,7 +21,7 @@ describe('Vite security baseline and reproducible dependency lock', () => {
   });
 
   it('does not retain a nested vulnerable Vite 6.x installation', () => {
-    for (const [path, entry] of Object.entries(lock.packages)) {
+    for (const [path, entry] of Object.entries(lock.packages as Record<string, { version: string }>)) {
       if (path === 'node_modules/vite' || path.endsWith('/node_modules/vite')) {
         const parts = entry.version.split('.').map(Number);
         assert.ok(parts[0] !== 6 || parts[1] > 4 || (parts[1] === 4 && parts[2] >= 4),

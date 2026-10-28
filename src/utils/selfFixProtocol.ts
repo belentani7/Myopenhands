@@ -4,6 +4,7 @@ import { VOCES_39, repararMotorVoz } from '../data/voiceConfig';
 import { NODES_LIST } from '../data/nodesMetadata';
 import { buildLocalDataBackup } from './localDataBackup';
 import { SafeStorage } from './safeStorage';
+import { isUserProgressRecord, isCVRecord } from './storageValidators';
 export { SafeStorage } from './safeStorage';
 
 export interface AuditReportItem {
@@ -362,7 +363,7 @@ export function ejecutarProtocoloAutoReparacion(): SelfFixResult {
   const { data: prog, repaired: progRepaired } = SafeStorage.getJSON(
     'ma_progress',
     INITIAL_PROGRESS_DEFAULTS,
-    (val) => typeof val?.totalXP === 'number' && Array.isArray(val?.completedLessons)
+    isUserProgressRecord
   );
   if (progRepaired) {
     reparaciones.push('Progreso del usuario restaurado y normalizado con valores de respaldo seguros.');
@@ -372,7 +373,7 @@ export function ejecutarProtocoloAutoReparacion(): SelfFixResult {
   const { data: cv, repaired: cvRepaired } = SafeStorage.getJSON(
     'ma_cv',
     INITIAL_CV_DEFAULTS,
-    (val) => val?.fullName && Array.isArray(val?.experience) && Array.isArray(val?.skills)
+    isCVRecord
   );
   if (cvRepaired) {
     reparaciones.push('Currículum ATS reconstruido con estructura válida y campos requeridos.');

@@ -14,8 +14,12 @@ describe('CI does not report success when quality gates fail', () => {
     assert.deepEqual(commands[0], 'npm ci');
   });
 
+  it('blocks high severity dependency advisories before running quality gates', () => {
+    assert.equal(commands[1], 'npm audit --audit-level=high');
+  });
+
   it('runs lint, tests and build as required failing steps', () => {
-    assert.deepEqual(commands, ['npm ci', 'npm run lint', 'npm test', 'npm run build']);
+    assert.deepEqual(commands, ['npm ci', 'npm audit --audit-level=high', 'npm run lint', 'npm test', 'npm run build']);
     assert.doesNotMatch(workflow, /\|\|\s*true|--if-present/);
   });
 });

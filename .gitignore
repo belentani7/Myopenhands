@@ -22,3 +22,8 @@ build/
 coverage/
 *.log
 .DS_Store
+
+# --- Python (scripts/ y tests/) — protocolos Belentani 2026-10-30 ---
+__pycache__/
+*.pyc
+.pytest_cache/
